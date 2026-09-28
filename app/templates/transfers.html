@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Transfers · Fulfillment Hub{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="eyebrow">Inventory movement</p><h1>Warehouse transfers</h1><p class="muted">Move promised stock from overflow to the main warehouse.</p></div>
+</section>
+<div class="table-card">
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Transfer</th><th>Order</th><th>Route</th><th>Units</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      {% for transfer in transfers %}
+        <tr>
+          <td>#{{ transfer.id }}</td>
+          <td><a href="{{ url_for('orders.detail', order_id=transfer.order_id) }}">{{ transfer.order.order_number }}</a></td>
+          <td>{{ transfer.from_warehouse.code }} → {{ transfer.to_warehouse.code }}</td>
+          <td>{{ transfer.items | sum(attribute='quantity') }}</td>
+          <td><span class="status">{{ transfer.status }}</span></td>
+          <td>
+            {% if transfer.status == 'REQUESTED' %}
+            <form method="post" action="{{ url_for('transfers.complete', transfer_id=transfer.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-primary btn-small" type="submit">Complete transfer</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="empty">No transfers.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="error-page"><h1>Not found</h1><p>The requested record does not exist.</p><a class="btn btn-primary" href="{{ url_for('dashboard.index') }}">Back to orders</a></section>
+{% endblock %}

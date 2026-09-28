@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Orders · Fulfillment Hub{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Operations</p>
+    <h1>Today's fulfillment</h1>
+    <p class="muted">Priority work, blockers and courier risk in one place. Times shown in {{ warehouse_timezone }}.</p>
+  </div>
+</section>
+
+<section class="stats-grid">
+  <div class="stat-card"><span>Priority due</span><strong>{{ counts.priority_due }}</strong></div>
+  <div class="stat-card"><span>Ready to pick</span><strong>{{ counts.ready_to_pick }}</strong></div>
+  <div class="stat-card"><span>Blocked</span><strong>{{ counts.blocked }}</strong></div>
+  <div class="stat-card"><span>Waiting for courier</span><strong>{{ counts.waiting_for_courier }}</strong></div>
+</section>
+
+<form class="filters card" method="get">
+  <input type="search" name="q" value="{{ filters.q }}" placeholder="Search order or customer">
+  <select name="status">
+    <option value="">All statuses</option>
+    {% for s in statuses %}
+      <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s.replace('_', ' ') }}</option>
+    {% endfor %}
+  </select>
+  <label class="check"><input type="checkbox" name="priority" value="1" {% if filters.priority %}checked{% endif %}> Priority only</label>
+  <label class="check"><input type="checkbox" name="blocked" value="1" {% if filters.blocked %}checked{% endif %}> Blocked only</label>
+  <button class="btn btn-secondary" type="submit">Apply</button>
+  <a class="btn btn-ghost" href="{{ url_for('dashboard.index') }}">Reset</a>
+</form>
+
+<div class="table-card">
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Order</th>
+          <th>Customer</th>
+          <th>Status</th>
+          <th>Ship by</th>
+          <th>Problem</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for order in orders %}
+        {% set risk = risk_level(order) %}
+        {% set open_blockers = order.exceptions | selectattr('status', 'equalto', 'OPEN') | selectattr('blocking', 'equalto', true) | list %}
+        <tr class="{% if risk in ['MISSED_PICKUP', 'OVERDUE'] %}row-danger{% elif risk == 'DUE_SOON' %}row-warning{% endif %}">
+          <td>
+            <strong>{{ order.order_number }}</strong>
+            <div class="meta-row">
+              {% if order.priority %}<span class="badge badge-priority">PRIORITY</span>{% endif %}
+              {% if risk == 'MISSED_PICKUP' %}<span class="badge badge-danger">MISSED PICKUP</span>{% elif risk == 'OVERDUE' %}<span class="badge badge-danger">OVERDUE</span>{% elif risk == 'DUE_SOON' %}<span class="badge badge-warning">DUE SOON</span>{% endif %}
+            </div>
+          </td>
+          <td>{{ order.customer_name }}<small>{{ order.channel }}</small></td>
+          <td><span class="status">{{ order.status.replace('_', ' ') }}</span></td>
+          <td>{{ order.ship_by_at|local_dt }}</td>
+          <td>
+            {% if open_blockers %}
+              <span class="badge badge-danger">{{ open_blockers|length }} blocking</span>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td><a class="btn btn-small" href="{{ url_for('orders.detail', order_id=order.id) }}">Open</a></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="empty">No orders match these filters.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Pick {{ order.order_number }} · Fulfillment Hub{% endblock %}
+{% block content %}
+<div class="pick-shell">
+  <header class="pick-header">
+    <a class="back-link" href="{{ url_for('orders.detail', order_id=order.id) }}">← Order details</a>
+    <p class="eyebrow">Warehouse picking</p>
+    <h1>{{ order.order_number }}</h1>
+    {% if order.priority %}<span class="badge badge-priority">PRIORITY</span>{% endif %}
+  </header>
+
+  {% if order.status == 'READY_TO_PICK' %}
+    <section class="pick-card">
+      <h2>Inventory is ready</h2>
+      <p>Start picking when you are at the warehouse floor.</p>
+      <form method="post" action="{{ url_for('warehouse.start', order_id=order.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-primary btn-xl" type="submit">Start picking</button>
+      </form>
+    </section>
+  {% elif order.status == 'PICKING' and next_item %}
+    {% set alloc = next_item.allocations | selectattr('remaining_quantity', 'gt', 0) | first %}
+    <section class="pick-card">
+      <p class="pick-label">GO TO SHELF</p>
+      {% if alloc %}
+        <div class="location-code">{{ alloc.inventory.location.code }}</div>
+      {% endif %}
+      <h2>{{ next_item.variant.product.name }}</h2>
+      <div class="variant-name">{{ next_item.variant.variant_name }}</div>
+      <code class="sku">{{ next_item.variant.sku }}</code>
+      <div class="pick-progress">{{ next_item.quantity_picked }} / {{ next_item.quantity_ordered }} confirmed</div>
+      <form method="post" action="{{ url_for('warehouse.scan', order_id=order.id) }}" class="scan-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="barcode">Scan item</label>
+        <input id="barcode" name="barcode" autocomplete="off" autofocus placeholder="Scan barcode or type SKU">
+        <button class="btn btn-primary btn-xl" type="submit">Confirm item</button>
+      </form>
+      <p class="muted hint">Demo tip: expected barcode is {{ next_item.variant.barcode }}.</p>
+    </section>
+  {% elif order.status == 'PICKING' %}
+    <section class="pick-card success-panel">
+      <div class="success-icon">✓</div>
+      <h2>Picking complete</h2>
+      <p>Every required item has been verified.</p>
+      <a class="btn btn-primary btn-xl" href="{{ url_for('orders.detail', order_id=order.id) }}">Pack this order</a>
+    </section>
+  {% else %}
+    <section class="pick-card">
+      <h2>Picking is not available</h2>
+      <p>This order is currently {{ order.status.replace('_',' ') }}.</p>
+      <a class="btn btn-secondary" href="{{ url_for('orders.detail', order_id=order.id) }}">Return to order</a>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', filename='js/picking.js') }}"></script>{% endblock %}

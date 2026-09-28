@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}{{ order.order_number }} · Fulfillment Hub{% endblock %}
+{% block content %}
+<section class="page-heading split">
+  <div>
+    <a class="back-link" href="{{ url_for('dashboard.index') }}">← Orders</a>
+    <p class="eyebrow">{{ order.channel }}</p>
+    <h1>{{ order.order_number }}</h1>
+    <p class="muted">{{ order.customer_name }}</p>
+  </div>
+  <div class="heading-badges">
+    {% if order.priority %}<span class="badge badge-priority">PRIORITY</span>{% endif %}
+    {% if risk == 'MISSED_PICKUP' %}<span class="badge badge-danger">MISSED PICKUP</span>{% elif risk == 'OVERDUE' %}<span class="badge badge-danger">OVERDUE</span>{% elif risk == 'DUE_SOON' %}<span class="badge badge-warning">DUE SOON</span>{% endif %}
+    <span class="status status-large">{{ order.status.replace('_', ' ') }}</span>
+  </div>
+</section>
+
+{% set open_exceptions = order.exceptions | selectattr('status', 'equalto', 'OPEN') | list %}
+{% if open_exceptions %}
+<section class="problem-stack">
+  {% for problem in open_exceptions %}
+    <article class="problem-card {% if problem.blocking %}problem-blocking{% endif %}">
+      <div>
+        <strong>{% if problem.blocking %}⚠ Blocking problem{% else %}Problem{% endif %}: {{ problem.exception_type.replace('_', ' ') }}</strong>
+        <p>{{ problem.message }}</p>
+        <small>Opened {{ problem.created_at|local_dt }}</small>
+      </div>
+      <form method="post" action="{{ url_for('orders.resolve', order_id=order.id, exception_id=problem.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-secondary" type="submit">Resolve</button>
+      </form>
+    </article>
+  {% endfor %}
+</section>
+{% endif %}
+
+<section class="workflow card">
+  {% set steps = ['NEW','READY_TO_PICK','PICKING','PACKED','STAGED','SHIPPED'] %}
+  {% set current_idx = steps.index(order.status) %}
+  {% for step in steps %}
+    {% set idx = loop.index0 %}
+    <div class="workflow-step {% if idx < current_idx %}done{% elif idx == current_idx %}current{% endif %}">
+      <span>{{ loop.index }}</span>
+      <small>{{ step.replace('_',' ') }}</small>
+    </div>
+  {% endfor %}
+</section>
+
+<div class="detail-grid">
+  <section class="card">
+    <div class="section-title">
+      <h2>Items</h2>
+      <span class="muted">Ship by {{ order.ship_by_at|local_dt }} · {{ warehouse_timezone }}</span>
+    </div>
+    {% for item in order.items %}
+      <div class="item-row">
+        <div>
+          <strong>{{ item.variant.product.name }}</strong>
+          <p>{{ item.variant.variant_name }}</p>
+          <code>{{ item.variant.sku }}</code>
+        </div>
+        <div class="qty-block">
+          <strong>{{ item.quantity_picked }} / {{ item.quantity_ordered }}</strong>
+          <small>picked</small>
+        </div>
+      </div>
+      {% for alloc in item.allocations %}
+        <div class="allocation">
+          <span>Reserved from <strong>{{ alloc.inventory.location.code }}</strong></span>
+          <span>{{ alloc.quantity_picked }}/{{ alloc.quantity_reserved }} consumed</span>
+        </div>
+      {% endfor %}
+    {% endfor %}
+  </section>
+
+  <section class="card action-card">
+    <h2>Next action</h2>
+    {% if order.status == 'NEW' %}
+      <p>Check stock and reserve the physical inventory needed for this order.</p>
+      <form method="post" action="{{ url_for('orders.prepare', order_id=order.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-primary btn-large" type="submit">Prepare order</button>
+      </form>
+    {% elif order.status == 'READY_TO_PICK' %}
+      <p>Inventory is allocated. Send this order to the warehouse picking screen.</p>
+      <a class="btn btn-primary btn-large" href="{{ url_for('warehouse.pick', order_id=order.id) }}">Start picking</a>
+    {% elif order.status == 'PICKING' %}
+      {% set total_ordered = order.items | sum(attribute='quantity_ordered') %}
+      {% set total_picked = order.items | sum(attribute='quantity_picked') %}
+      {% if total_picked == total_ordered %}
+        <p>Every item has been verified. The box can now be packed.</p>
+        <form method="post" action="{{ url_for('orders.pack', order_id=order.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-primary btn-large" type="submit">Mark packed</button>
+        </form>
+      {% else %}
+        <p>{{ total_picked }} of {{ total_ordered }} units verified.</p>
+        <a class="btn btn-primary btn-large" href="{{ url_for('warehouse.pick', order_id=order.id) }}">Continue picking</a>
+      {% endif %}
+    {% elif order.status == 'PACKED' %}
+      <p>Choose exactly where the box will wait and which courier will collect it.</p>
+      <form method="post" action="{{ url_for('orders.stage', order_id=order.id) }}" class="stacked-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Courier
+          <select name="courier_id" required>
+            {% for courier in couriers %}
+              <option value="{{ courier.id }}">
+                {{ courier.name }} · {{ courier.service_name }} ·
+                {% if courier.estimated_days == 0 %}Same day{% else %}{{ courier.estimated_days }} day{% if courier.estimated_days != 1 %}s{% endif %}{% endif %}
+                {% if courier.estimated_cost_cents is not none %} · ₹{{ '%.0f'|format(courier.estimated_cost_cents / 100) }}{% endif %}
+                {% if courier.pickup_cutoff_time %} · cutoff {{ courier.pickup_cutoff_time.strftime('%H:%M') }}{% endif %}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Staging location
+          <select name="staging_location_id" required>
+            {% for loc in staging_locations %}
+              <option value="{{ loc.id }}">{{ loc.code }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Expected pickup ({{ warehouse_timezone }})
+          <input type="datetime-local" name="pickup_due_at" required>
+        </label>
+        <button class="btn btn-primary btn-large" type="submit">Stage order</button>
+      </form>
+    {% elif order.status == 'STAGED' %}
+      <div class="shipment-box">
+        <p><strong>{{ order.shipment.staging_location.code }}</strong><small>staging location</small></p>
+        <p><strong>{{ order.shipment.courier.name }}</strong><small>{{ order.shipment.courier.service_name }}</small></p>
+        <p><strong>{{ order.shipment.pickup_due_at|local_dt }}</strong><small>expected pickup · {{ warehouse_timezone }}</small></p>
+      </div>
+      <form method="post" action="{{ url_for('orders.ship', order_id=order.id) }}" onsubmit="return confirm('Confirm that the courier physically collected this box?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-primary btn-large" type="submit">Confirm courier pickup</button>
+      </form>
+    {% else %}
+      <p class="success-state">✓ Fulfillment complete. Courier pickup was confirmed.</p>
+    {% endif %}
+  </section>
+</div>
+
+<div class="detail-grid">
+  <section class="card">
+    <h2>Report a problem</h2>
+    <form method="post" action="{{ url_for('orders.add_exception', order_id=order.id) }}" class="stacked-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Problem type
+        <select name="exception_type">
+          {% for t in exception_types %}<option value="{{ t }}">{{ t.replace('_', ' ') }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Description
+        <textarea name="message" rows="3" placeholder="What happened?" required></textarea>
+      </label>
+      <label class="check"><input type="checkbox" name="blocking" value="1" checked> Block order until resolved</label>
+      <button class="btn btn-secondary" type="submit">Record problem</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Activity</h2>
+    <div class="timeline">
+      {% for event in order.activity_logs | reverse %}
+        <div class="timeline-item">
+          <span></span>
+          <div>
+            <strong>{{ event.message }}</strong>
+            <small>{{ event.actor }} · {{ event.created_at|local_dt('%d %b, %H:%M:%S') }}</small>
+          </div>
+        </div>
+      {% else %}
+        <p class="muted">No activity yet.</p>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Inventory · Fulfillment Hub{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="eyebrow">Physical stock</p><h1>Inventory</h1><p class="muted">What is on hand, reserved and available at each shelf.</p></div>
+</section>
+<form class="filters card" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search product, SKU or barcode">
+  <button class="btn btn-secondary" type="submit">Search</button>
+  <a class="btn btn-ghost" href="{{ url_for('inventory.index') }}">Reset</a>
+</form>
+<div class="table-card">
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Product</th><th>SKU</th><th>Warehouse</th><th>Location</th><th>On hand</th><th>Reserved</th><th>Available</th></tr></thead>
+      <tbody>
+      {% for row in rows %}
+        <tr>
+          <td><strong>{{ row.variant.product.name }}</strong><small>{{ row.variant.variant_name }}</small></td>
+          <td><code>{{ row.variant.sku }}</code></td>
+          <td>{{ row.location.warehouse.code }}</td>
+          <td>{{ row.location.code }}</td>
+          <td>{{ row.quantity_on_hand }}</td>
+          <td>{{ row.quantity_reserved }}</td>
+          <td><strong>{{ row.available_quantity }}</strong></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="empty">No inventory matches the search.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
